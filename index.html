@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanji Flashcards App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        .kanji-char {
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+        .details {
+            transition: opacity 0.3s ease-in-out, max-height 0.3s ease-in-out;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        .details.revealed {
+            max-height: 1000px;
+            opacity: 1;
+        }
+        .btn-focus:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        #assessment-buttons {
+            transition: opacity 0.3s ease-in-out;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #assessment-buttons.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .furigana {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        /* Simple loading spinner for data loading */
+        #app-loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div id="app-loader"></div>
+
+    <div id="app-container" class="w-full max-w-md mx-auto p-4 md:p-6 hidden">
+        <header class="text-center mb-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Kanji Flashcards</h1>
+            <div class="mt-2">
+                <select id="difficulty-select" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <option value="grade-1">Grade 1 Kanji (80)</option>
+                    <option value="grade-2">Grade 2 Kanji (160)</option>
+                    <option value="top-100">Top 100 Frequent Kanji</option>
+                </select>
+            </div>
+        </header>
+        
+        <div class="text-center mb-4">
+            <p class="text-lg font-semibold text-gray-700">Mastered: <span id="mastery-count">0</span> / <span id="total-count">0</span></p>
+            <p class="text-xs text-gray-500">(Mastery = score of 5+)</p>
+        </div>
+
+        <div id="flashcard" class="bg-white rounded-2xl shadow-lg cursor-pointer select-none">
+            <div id="kanji-display" class="flex items-center justify-center h-48 md:h-56">
+                <p class="kanji-char text-8xl md:text-9xl text-gray-900"></p>
+            </div>
+            <div id="details-container" class="details p-6 pt-0">
+                <div class="border-t pt-4">
+                    <div class="mb-4">
+                        <h2 class="font-semibold text-lg text-indigo-700">Meaning</h2>
+                        <p id="meaning" class="text-gray-800 text-xl"></p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <h3 class="font-semibold text-md text-indigo-700">On'yomi (音読み)</h3>
+                            <p id="onyomi" class="text-gray-800 text-lg"></p>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-md text-indigo-700">Kun'yomi (訓読み)</h3>
+                            <p id="kunyomi" class="text-gray-800 text-lg"></p>
+                        </div>
+                    </div>
+                    <div id="examples-section">
+                        <h3 class="font-semibold text-lg text-indigo-700 mb-2">Examples</h3>
+                        <div id="examples-list" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="assessment-buttons" class="mt-6 flex justify-around">
+            <button id="wrong-button" class="bg-red-500 text-white font-bold py-3 px-6 rounded-full shadow-md hover:bg-red-600 transition-all duration-200 btn-focus">Didn't Know</button>
+            <button id="correct-button" class="bg-green-500 text-white font-bold py-3 px-8 rounded-full shadow-md hover:bg-green-600 transition-all duration-200 btn-focus">I Knew It</button>
+        </div>
+        
+        <footer class="text-center mt-8 text-sm text-gray-500">
+            <p>Click the card to reveal the answer.</p>
+            <button id="reset-progress" class="text-indigo-600 hover:underline mt-2">Reset All Progress</button>
+        </footer>
+    </div>
+
+    <script>
+        const MASTERY_THRESHOLD = 5;
+        const DATA_FOLDER = './data/';
+
+        const appLoader = document.getElementById('app-loader');
+        const appContainer = document.getElementById('app-container');
+        const flashcard = document.getElementById('flashcard');
+        const kanjiDisplay = document.querySelector('#kanji-display p');
+        const detailsContainer = document.getElementById('details-container');
+        const meaningEl = document.getElementById('meaning');
+        const onyomiEl = document.getElementById('onyomi');
+        const kunyomiEl = document.getElementById('kunyomi');
+        const examplesListEl = document.getElementById('examples-list');
+        const assessmentButtons = document.getElementById('assessment-buttons');
+        const correctButton = document.getElementById('correct-button');
+        const wrongButton = document.getElementById('wrong-button');
+        const masteryCountEl = document.getElementById('mastery-count');
+        const totalCountEl = document.getElementById('total-count');
+        const resetProgressBtn = document.getElementById('reset-progress');
+        const difficultySelect = document.getElementById('difficulty-select');
+
+        let currentKanjiList = [];
+        let currentKanji = null;
+        let masteryData = {};
+        let currentLevel = 'grade-1';
+
+        async function loadKanjiData(level) {
+            appContainer.classList.add('hidden');
+            appLoader.classList.remove('hidden');
+            try {
+                const response = await fetch(`${DATA_FOLDER}${level}.json`);
+                if (!response.ok) {
+                    throw new Error(`Could not load ${level}.json. File not found or network error.`);
+                }
+                currentKanjiList = await response.json();
+                totalCountEl.textContent = currentKanjiList.length;
+                loadProgress();
+                displayNewKanji();
+            } catch (error) {
+                console.error("Failed to load kanji data:", error);
+                alert("Error: Could not load the kanji list. Make sure the JSON files are in a 'data' folder next to index.html.");
+            } finally {
+                appLoader.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+            }
+        }
+
+        function getMasteryKey() {
+            return `kanjiMasteryData_${currentLevel}`;
+        }
+
+        function loadProgress() {
+            const savedData = localStorage.getItem(getMasteryKey());
+            masteryData = savedData ? JSON.parse(savedData) : {};
+            currentKanjiList.forEach(k => {
+                if (masteryData[k.kanji] === undefined) masteryData[k.kanji] = 0;
+            });
+            updateMasteryCount();
+        }
+
+        function saveProgress() {
+            localStorage.setItem(getMasteryKey(), JSON.stringify(masteryData));
+            updateMasteryCount();
+        }
+
+        function updateMasteryCount() {
+            const count = Object.values(masteryData).filter(score => score >= MASTERY_THRESHOLD).length;
+            masteryCountEl.textContent = count;
+        }
+
+        function selectNextKanji() {
+            const needsPractice = [], learning = [];
+            currentKanjiList.forEach(k => {
+                const score = masteryData[k.kanji] || 0;
+                if (score < 2) needsPractice.push(k);
+                else if (score < MASTERY_THRESHOLD) learning.push(k);
+            });
+
+            let selectionPool = [];
+            if (needsPractice.length > 0 && (Math.random() < 0.7 || learning.length === 0)) {
+                selectionPool = needsPractice;
+            } else if (learning.length > 0) {
+                selectionPool = learning;
+            } else {
+                selectionPool = currentKanjiList;
+            }
+            return selectionPool[Math.floor(Math.random() * selectionPool.length)];
+        }
+        
+        function renderExamples(examples) {
+            examplesListEl.innerHTML = '';
+            const examplesSection = document.getElementById('examples-section');
+            if (!examples || examples.length === 0) {
+                examplesSection.style.display = 'none';
+                return;
+            }
+            
+            examplesSection.style.display = 'block';
+            examples.forEach(ex => {
+                const exampleEl = document.createElement('div');
+                exampleEl.className = 'p-2 bg-gray-50 rounded-md';
+                exampleEl.innerHTML = `
+                    <p class="furigana">${ex.furigana}</p>
+                    <p class="text-gray-900">${ex.sentence}</p>
+                    <p class="text-sm text-gray-500 italic">"${ex.translation}"</p>
+                `;
+                examplesListEl.appendChild(exampleEl);
+            });
+        }
+
+        function displayNewKanji() {
+            detailsContainer.classList.remove('revealed');
+            assessmentButtons.classList.remove('visible');
+
+            setTimeout(() => {
+                currentKanji = selectNextKanji();
+                if (!currentKanji) return; // Guard against empty list
+                kanjiDisplay.textContent = currentKanji.kanji;
+                meaningEl.textContent = currentKanji.meaning;
+                onyomiEl.textContent = currentKanji.onyomi || 'N/A';
+                kunyomiEl.textContent = currentKanji.kunyomi || 'N/A';
+                renderExamples(currentKanji.examples);
+            }, 250);
+        }
+
+        function revealCard() {
+            if (!detailsContainer.classList.contains('revealed')) {
+                detailsContainer.classList.add('revealed');
+                assessmentButtons.classList.add('visible');
+            }
+        }
+
+        function handleAssessment(knewIt) {
+            masteryData[currentKanji.kanji] = knewIt ? (masteryData[currentKanji.kanji] + 1) : 0;
+            saveProgress();
+            displayNewKanji();
+        }
+        
+        difficultySelect.addEventListener('change', (e) => {
+            currentLevel = e.target.value;
+            loadKanjiData(currentLevel);
+        });
+
+        flashcard.addEventListener('click', revealCard);
+        correctButton.addEventListener('click', () => handleAssessment(true));
+        wrongButton.addEventListener('click', () => handleAssessment(false));
+        
+        resetProgressBtn.addEventListener('click', () => {
+            // Using a custom modal instead of confirm()
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="p-8 border w-96 shadow-lg rounded-md bg-white">
+                    <div class="text-center">
+                        <h3 class="text-2xl font-bold text-gray-900">Reset Progress?</h3>
+                        <div class="mt-2 px-7 py-3">
+                            <p class="text-sm text-gray-500">
+                                This will reset your progress for the <strong>${difficultySelect.options[difficultySelect.selectedIndex].text}</strong> list.
+                            </p>
+                        </div>
+                        <div class="flex justify-center mt-4">
+                            <button id="confirm-reset" class="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-auto shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300">
+                                Yes, Reset
+                            </button>
+                            <button id="cancel-reset" class="ml-4 px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            document.getElementById('confirm-reset').addEventListener('click', () => {
+                localStorage.removeItem(getMasteryKey());
+                loadProgress();
+                displayNewKanji();
+                document.body.removeChild(modal);
+            });
+
+            document.getElementById('cancel-reset').addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+        });
+
+        window.onload = () => {
+            loadKanjiData(currentLevel);
+        };
+
+    </script>
+</body>
+</html>
