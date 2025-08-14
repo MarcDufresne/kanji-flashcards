@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanji Flashcards App</title>
+
+    <!-- PWA Manifest and Theme Color -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -41,7 +46,6 @@
             font-size: 0.75rem;
             color: #6b7280;
         }
-        /* Simple loading spinner for data loading */
         #app-loader {
             border: 5px solid #f3f3f3;
             border-top: 5px solid #3498db;
@@ -71,7 +75,7 @@
                 </select>
             </div>
         </header>
-        
+
         <div class="text-center mb-4">
             <p class="text-lg font-semibold text-gray-700">Mastered: <span id="mastery-count">0</span> / <span id="total-count">0</span></p>
             <p class="text-xs text-gray-500">(Mastery = score of 5+)</p>
@@ -109,7 +113,7 @@
             <button id="wrong-button" class="bg-red-500 text-white font-bold py-3 px-6 rounded-full shadow-md hover:bg-red-600 transition-all duration-200 btn-focus">Didn't Know</button>
             <button id="correct-button" class="bg-green-500 text-white font-bold py-3 px-8 rounded-full shadow-md hover:bg-green-600 transition-all duration-200 btn-focus">I Knew It</button>
         </div>
-        
+
         <footer class="text-center mt-8 text-sm text-gray-500">
             <p>Click the card to reveal the answer.</p>
             <button id="reset-progress" class="text-indigo-600 hover:underline mt-2">Reset All Progress</button>
@@ -117,6 +121,19 @@
     </div>
 
     <script>
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+
         const MASTERY_THRESHOLD = 5;
         const DATA_FOLDER = './data/';
 
@@ -204,7 +221,7 @@
             }
             return selectionPool[Math.floor(Math.random() * selectionPool.length)];
         }
-        
+
         function renderExamples(examples) {
             examplesListEl.innerHTML = '';
             const examplesSection = document.getElementById('examples-section');
@@ -212,7 +229,7 @@
                 examplesSection.style.display = 'none';
                 return;
             }
-            
+
             examplesSection.style.display = 'block';
             examples.forEach(ex => {
                 const exampleEl = document.createElement('div');
@@ -253,7 +270,7 @@
             saveProgress();
             displayNewKanji();
         }
-        
+
         difficultySelect.addEventListener('change', (e) => {
             currentLevel = e.target.value;
             loadKanjiData(currentLevel);
@@ -262,9 +279,8 @@
         flashcard.addEventListener('click', revealCard);
         correctButton.addEventListener('click', () => handleAssessment(true));
         wrongButton.addEventListener('click', () => handleAssessment(false));
-        
+
         resetProgressBtn.addEventListener('click', () => {
-            // Using a custom modal instead of confirm()
             const modal = document.createElement('div');
             modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50';
             modal.innerHTML = `
